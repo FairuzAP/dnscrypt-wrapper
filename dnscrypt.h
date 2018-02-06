@@ -10,6 +10,9 @@
 #include <event2/buffer.h>
 #include <event2/util.h>
 #include <sodium.h>
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 
 #if SODIUM_LIBRARY_VERSION_MAJOR < 7
 # define sodium_allocarray(C, S) calloc(C, S)
@@ -97,6 +100,8 @@
     cert->es_version[1] == 1)
 #define XCHACHA20_CERT(cert) (cert->es_version[0] == 0 && \
     cert->es_version[1] == 2)
+#define AES_CERT(cert) (cert->es_version[0] == 0 && \
+    cert->es_version[1] == 3)
 
 typedef struct KeyPair_ {
     uint8_t crypt_publickey[crypto_box_PUBLICKEYBYTES];

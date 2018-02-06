@@ -446,6 +446,7 @@ main(int argc, const char **argv)
     int provider_publickey_dns_records = 0;
     int verbose = 0;
     int use_xchacha20 = 0;
+    int use_aes = 0;
     int nolog = 0, dnssec = 0, nofilter = 0;
     struct argparse argparse;
     struct argparse_option options[] = {
@@ -494,6 +495,7 @@ main(int argc, const char **argv)
 #ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
         OPT_BOOLEAN('x', "xchacha20", &use_xchacha20, "generate a certificate for use with the xchacha20 cipher"),
 #endif
+		OPT_BOOLEAN(0, "aes", &use_aes, "generate a certificate for use with the AES cipher"),
         OPT_END(),
     };
 
@@ -717,7 +719,7 @@ main(int argc, const char **argv)
         }
         logger(LOG_NOTICE, "Generating pre-signed certificate.");
         struct SignedCert *signed_cert =
-            cert_build_cert(c.keypairs->crypt_publickey, cert_file_expire_days, use_xchacha20);
+            cert_build_cert(c.keypairs->crypt_publickey, cert_file_expire_days, use_xchacha20, use_aes);
         if (!signed_cert || cert_sign(signed_cert, c.provider_secretkey) != 0) {
             logger(LOG_NOTICE, "Failed.");
             exit(1);

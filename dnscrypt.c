@@ -77,6 +77,122 @@ find_cert(const struct context *c,
     return NULL;
 }
 
+int aes_ctr_256_encrypt(const unsigned char *plaintext, int plaintext_len, const unsigned char *key, unsigned char *ciphertext, const unsigned char *iv)
+{
+  EVP_CIPHER_CTX *ctx;
+
+  int len;
+
+  int ciphertext_len;
+
+  /* Create and initialise the context */
+  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
+
+  /* Initialise the encryption operation. IMPORTANT - ensure you use a key
+   * In this example we are using 256 bit AES (i.e. a 256 bit key). 
+  */
+  if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_ctr(), NULL, key, iv))
+    handleErrors();
+
+  /* Provide the message to be encrypted, and obtain the encrypted output.
+   * EVP_EncryptUpdate can be called multiple times if necessary
+   */
+  if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    handleErrors();
+  ciphertext_len = len;
+
+  /* Finalise the encryption. Further ciphertext bytes may be written at
+   * this stage.
+   */
+  if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))  handleErrors();
+  ciphertext_len += len;
+
+  /* Clean up */
+  EVP_CIPHER_CTX_free(ctx);
+
+  return ciphertext_len;
+}
+
+int aes_ctr_256_decrypt(const unsigned char *ciphertext, int ciphertext_len, const unsigned char  *key, unsigned char *plaintext, const unsigned char *iv)
+{
+  EVP_CIPHER_CTX *ctx;
+
+  int len;
+
+  int plaintext_len;
+
+  /* Create and initialise the context */
+  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
+
+  /* Initialise the decryption operation. IMPORTANT - ensure you use a key
+   * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+  */
+  if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_ctr(), NULL, key, iv))
+handleErrors();
+
+  /* Provide the message to be decrypted, and obtain the plaintext output.
+   * EVP_DecryptUpdate can be called multiple times if necessary
+   */
+  if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    handleErrors();
+  plaintext_len = len;
+
+  /* Finalise the decryption. Further plaintext bytes may be written at
+   * this stage.
+   */
+  if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) handleErrors();
+  plaintext_len += len;
+
+  /* Clean up */
+  EVP_CIPHER_CTX_free(ctx);
+
+  return plaintext_len;
+}
+
+int aespoly1305_afternm(
+  unsigned char *c,
+  const unsigned char *m,unsigned long long mlen,
+  const unsigned char *n,
+  const unsigned char *k
+) {
+    int i;
+	printf("AES\n");
+    if (mlen < 32) {
+        return -1;
+    }
+    aes_ctr_256_encrypt(m, mlen, k, c, n);
+    crypto_onetimeauth_poly1305(c + 16, c + 32, mlen - 32, c);
+    for (i = 0; i < 16; ++i) {
+        c[i] = 0;
+    }
+    return 0;
+}
+
+int aespoly1305_open_afternm(
+  unsigned char *m,
+  const unsigned char *c,unsigned long long clen,
+  const unsigned char *n,
+  const unsigned char *k
+) {
+    unsigned char subkey[32];
+    int           i;
+	printf("AES_Open\n");
+    if (clen < 32) {
+        return -1;
+    }
+    for(int i=0; i<32; i++) subkey[i] = 0;
+    aes_ctr_256_decrypt(subkey, 32, k, subkey, n);
+    if (crypto_onetimeauth_poly1305_verify(c + 16, c + 32,
+                                           clen - 32, subkey) != 0) {
+        return -1;
+    }
+	aes_ctr_256_decrypt(c, clen, k, m, n);
+    for (i = 0; i < 32; ++i) {
+        m[i] = 0;
+    }
+    return 0;
+}
+
 int
 dnscrypt_cmp_client_nonce(const uint8_t
                           client_nonce[crypto_box_HALF_NONCEBYTES],
@@ -284,8 +400,17 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
     uint8_t nonce[crypto_box_NONCEBYTES];
     memcpy(nonce, query_header->nonce, crypto_box_HALF_NONCEBYTES);
     memset(nonce + crypto_box_HALF_NONCEBYTES, 0, crypto_box_HALF_NONCEBYTES);
-
-    if (XCHACHA20_CERT(cert)) {
+	if (AES_CERT(cert)) { 
+		
+        if (aespoly1305_open_afternm
+            (buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
+             buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
+             len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
+             nonce, nmkey) != 0) {
+            return -1;
+        }
+		
+	} else if (XCHACHA20_CERT(cert)) {
 #ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
         if (crypto_box_curve25519xchacha20poly1305_open_easy_afternm
             (buf, buf + DNSCRYPT_QUERY_BOX_OFFSET,
@@ -294,9 +419,11 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
         }
 #endif
     } else {
-        if (crypto_box_open_easy_afternm
-            (buf, buf + DNSCRYPT_QUERY_BOX_OFFSET,
-             len - DNSCRYPT_QUERY_BOX_OFFSET, nonce, nmkey) != 0) {
+        if (crypto_box_open_afternm
+            (buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
+             buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
+             len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
+             nonce, nmkey) != 0) {
             return -1;
         }
     }
@@ -308,7 +435,9 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
     }
 
     memcpy(client_nonce, nonce, crypto_box_HALF_NONCEBYTES);
-    *lenp = len;
+    *lenp = len - (DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES);
+    memmove(buf,
+            buf + DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, *lenp);
 
     return 0;
 }
@@ -365,8 +494,17 @@ dnscrypt_server_curve(struct context *c, const dnsccert *cert,
                      c->keypairs[0].crypt_secretkey);
     // add server nonce extension
     add_server_nonce(c, nonce);
-
-    if (XCHACHA20_CERT(cert)) {
+    
+	if (AES_CERT(cert)) { 
+		
+        memset(boxed - crypto_box_BOXZEROBYTES, 0, crypto_box_ZEROBYTES);
+        if (aespoly1305_afternm
+			(boxed - crypto_box_BOXZEROBYTES, boxed - crypto_box_BOXZEROBYTES,
+			len + crypto_box_ZEROBYTES, nonce, nmkey) != 0) {
+            return -1;
+        }
+		
+	} else if (XCHACHA20_CERT(cert)) {
 #ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
         if (crypto_box_curve25519xchacha20poly1305_easy_afternm
             (boxed, boxed + crypto_box_MACBYTES, len, nonce, nmkey) != 0) {
@@ -374,8 +512,10 @@ dnscrypt_server_curve(struct context *c, const dnsccert *cert,
         }
 #endif
     } else {
-        if (crypto_box_easy_afternm(boxed, boxed + crypto_box_MACBYTES,
-                                    len, nonce, nmkey) != 0) {
+		memset(boxed - crypto_box_BOXZEROBYTES, 0, crypto_box_ZEROBYTES);
+        if (crypto_box_afternm
+			(boxed - crypto_box_BOXZEROBYTES, boxed - crypto_box_BOXZEROBYTES,
+			len + crypto_box_ZEROBYTES, nonce, nmkey) != 0) {
             return -1;
         }
     }
@@ -459,4 +599,5 @@ dnscrypt_self_serve_cert_file(struct context *c, struct dns_header *header,
     }
     return -1;
 }
+
 
