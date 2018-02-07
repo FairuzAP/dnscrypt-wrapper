@@ -77,76 +77,60 @@ find_cert(const struct context *c,
     return NULL;
 }
 
-int aes_ctr_256_encrypt(const unsigned char *plaintext, int plaintext_len, const unsigned char *key, unsigned char *ciphertext, const unsigned char *iv)
+int aes_ctr_256_xor(const unsigned char *in, int in_len, const unsigned char *key, unsigned char *out, const unsigned char *iv)
 {
-  EVP_CIPHER_CTX *ctx;
-
-  int len;
-
-  int ciphertext_len;
-
-  /* Create and initialise the context */
-  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
-
-  /* Initialise the encryption operation. IMPORTANT - ensure you use a key
-   * In this example we are using 256 bit AES (i.e. a 256 bit key). 
-  */
-  if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_ctr(), NULL, key, iv))
-    handleErrors();
-
-  /* Provide the message to be encrypted, and obtain the encrypted output.
-   * EVP_EncryptUpdate can be called multiple times if necessary
-   */
-  if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
-    handleErrors();
-  ciphertext_len = len;
-
-  /* Finalise the encryption. Further ciphertext bytes may be written at
-   * this stage.
-   */
-  if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))  handleErrors();
-  ciphertext_len += len;
-
-  /* Clean up */
-  EVP_CIPHER_CTX_free(ctx);
-
-  return ciphertext_len;
-}
-
-int aes_ctr_256_decrypt(const unsigned char *ciphertext, int ciphertext_len, const unsigned char  *key, unsigned char *plaintext, const unsigned char *iv)
-{
-  EVP_CIPHER_CTX *ctx;
-
-  int len;
-
-  int plaintext_len;
-
-  /* Create and initialise the context */
-  if(!(ctx = EVP_CIPHER_CTX_new())) handleErrors();
-
-  /* Initialise the decryption operation. IMPORTANT - ensure you use a key
-   * In this example we are using 256 bit AES (i.e. a 256 bit key). The
-  */
-  if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_ctr(), NULL, key, iv))
-handleErrors();
-
-  /* Provide the message to be decrypted, and obtain the plaintext output.
-   * EVP_DecryptUpdate can be called multiple times if necessary
-   */
-  if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
-    handleErrors();
-  plaintext_len = len;
-
-  /* Finalise the decryption. Further plaintext bytes may be written at
-   * this stage.
-   */
-  if(1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) handleErrors();
-  plaintext_len += len;
-
-  /* Clean up */
-  EVP_CIPHER_CTX_free(ctx);
-
-  return plaintext_len;
+	unsigned char ctr_in[16];
+	unsigned char ctr_out[16];
+	unsigned int i;
+	unsigned int u;
+	
+	printf("Before ");
+	int inlen = in_len;
+	unsigned char *outcpy = out;
+	for (int i = 0; i < inlen; i++) {
+	  printf("%u ", in[i]);
+	}
+	printf("\n");
+	
+	for (i = 0; i < 8; i++) {
+        ctr_in[i] = iv[i];
+    }
+    for (i = 8; i < 16; i++) {
+        ctr_in[i] = 0;
+    }
+	
+	AES_KEY enc_key;
+    AES_set_encrypt_key(key, 256, &enc_key);    
+    
+	while(in_len >= 16) {
+		AES_encrypt(ctr_in, ctr_out, &enc_key);
+		for (i = 0; i < 16; i++) {
+            out[i] = in[i] ^ ctr_out[i];
+        }
+		u = 1;
+        for (i = 8; i < 16; i++) {
+            u += (unsigned int) ctr_in[i];
+            ctr_in[i] = u;
+            u >>= 8;
+        }
+        in_len -= 16;
+        in += 16;
+        out += 16;
+	}
+	if(in_len) {
+		AES_encrypt(ctr_in, ctr_out, &enc_key);
+		for (i = 0; i < (unsigned int) in_len; i++) {
+            out[i] = in[i] ^ ctr_out[i];
+        }
+	}
+	
+	printf("After ");
+	for (int i = 0; i < inlen; i++) {
+	  printf("%u ", outcpy[i]);
+	}
+	printf("\n");
+	
+	return 0;
 }
 
 int aespoly1305_afternm(
@@ -160,7 +144,7 @@ int aespoly1305_afternm(
     if (mlen < 32) {
         return -1;
     }
-    aes_ctr_256_encrypt(m, mlen, k, c, n);
+    aes_ctr_256_xor(m, mlen, k, c, n);
     crypto_onetimeauth_poly1305(c + 16, c + 32, mlen - 32, c);
     for (i = 0; i < 16; ++i) {
         c[i] = 0;
@@ -181,12 +165,12 @@ int aespoly1305_open_afternm(
         return -1;
     }
     for(int i=0; i<32; i++) subkey[i] = 0;
-    aes_ctr_256_decrypt(subkey, 32, k, subkey, n);
+    aes_ctr_256_xor(subkey, 32, k, subkey, n);
     if (crypto_onetimeauth_poly1305_verify(c + 16, c + 32,
                                            clen - 32, subkey) != 0) {
         return -1;
     }
-	aes_ctr_256_decrypt(c, clen, k, m, n);
+	aes_ctr_256_xor(c, clen, k, m, n);
     for (i = 0; i < 32; ++i) {
         m[i] = 0;
     }

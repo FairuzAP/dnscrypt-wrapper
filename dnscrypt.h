@@ -10,9 +10,10 @@
 #include <event2/buffer.h>
 #include <event2/util.h>
 #include <sodium.h>
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
+//#include <openssl/conf.h>
+//#include <openssl/evp.h>
+//#include <openssl/err.h>
+#include <openssl/aes.h>
 
 #if SODIUM_LIBRARY_VERSION_MAJOR < 7
 # define sodium_allocarray(C, S) calloc(C, S)
