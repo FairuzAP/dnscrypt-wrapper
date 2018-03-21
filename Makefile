@@ -5,10 +5,18 @@ all::
 #
 # Define V=1 to have a more verbose compile.
 
-### Defaults
+### CUDA Dependecies
+NVCC=nvcc
+CUDACXXFLAGS= -lstdc++
+CUDAFLAGS= -c
+CUDALIBDIRS=-L/usr/local/cuda/lib64
+CUDAINCDIRS=-I/usr/local/cuda/include
+cuda_wrapper.o: cuda_wrapper.cu
+	$(NVCC) $(CUDAFLAGS) cuda_wrapper.cu
 
+### Defaults
 BASIC_CFLAGS = -std=c99 -Wall -I./argparse
-BASIC_LDFLAGS = -lm -lsodium -lssl -lcrypto
+BASIC_LDFLAGS = -lm -lsodium -lssl -lcrypto -lcudart
 
 # Guard against environment variables
 LIB_H = 
@@ -77,8 +85,8 @@ endif
 # manual configuration
 -include config.mak
 
-### Dependencies
 
+### Dependencies
 LIB_H = dnscrypt.h udp_request.h edns.h logger.h argparse/argparse.h
 
 LIB_OBJS += dnscrypt.o
@@ -188,8 +196,8 @@ MAIN-LDFLAGS: FORCE
 $(OBJECTS): %.o: %.c $(missing_dep_dirs) MAIN-CFLAGS
 	$(QUIET_CC)$(CC) -o $*.o -c $(dep_args) $(ALL_CFLAGS) $<
 
-dnscrypt-wrapper: $(OBJECTS) $(DEP_LIBS) MAIN-LDFLAGS
-	$(QUIET_LINK)$(CC) -o $@ $(filter %.o %.a,$^) $(ALL_LDFLAGS)
+dnscrypt-wrapper: cuda_wrapper.o $(OBJECTS) $(DEP_LIBS) MAIN-LDFLAGS
+	$(QUIET_LINK)$(CC) -o $@ $(filter %.o %.a,$^) $(CUDALIBDIRS) $(CUDAINCDIRS) $(ALL_LDFLAGS) $(CUDACXXFLAGS)
 
 main.o: version.h
 
@@ -208,6 +216,7 @@ uninstall:
 clean:
 	$(RM) dnscrypt-wrapper
 	$(RM) $(LIB_OBJS)
+	$(RM) cuda_wrapper.o
 	make -C argparse clean
 
 .PHONY: all install uninstall clean FORCE

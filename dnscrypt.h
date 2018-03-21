@@ -4,6 +4,7 @@
 #include "compat.h"
 #include "tree.h"
 #include "debug.h"
+#include "cuda_wrapper.h"
 #include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
@@ -13,7 +14,6 @@
 //#include <openssl/conf.h>
 //#include <openssl/evp.h>
 //#include <openssl/err.h>
-#include <openssl/aes.h>
 
 #if SODIUM_LIBRARY_VERSION_MAJOR < 7
 # define sodium_allocarray(C, S) calloc(C, S)
