@@ -496,6 +496,7 @@ main(int argc, const char **argv)
         OPT_BOOLEAN('x', "xchacha20", &use_xchacha20, "generate a certificate for use with the xchacha20 cipher"),
 #endif
 		OPT_BOOLEAN(0, "aes", &use_aes, "generate a certificate for use with the AES cipher"),
+        OPT_BOOLEAN('c', "cuda", &c.use_cuda, "use GPU to accelerate encryption/decryption process"),
         OPT_END(),
     };
 
@@ -790,6 +791,9 @@ main(int argc, const char **argv)
     if (c.daemonize) {
         do_daemonize();
     }
+    if (c.use_cuda) {
+		init_cuda();
+	}
     if (c.pidfile) {
         pidfile_create(c.pidfile);
     }

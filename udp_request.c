@@ -1,6 +1,8 @@
 
 #include "dnscrypt.h"
 
+bool use_cuda;
+
 typedef struct SendtoWithRetryCtx_ {
     void (*cb) (UDPRequest *udp_request);
     const void *buffer;
@@ -317,7 +319,7 @@ client_to_proxy_cb(evutil_socket_t client_proxy_handle, short ev_flags,
         if (dnscrypt_server_uncurve(c, udp_request->cert,
                                     udp_request->client_nonce,
                                     udp_request->nmkey, dns_query,
-                                    &dns_query_len) != 0) {
+                                    &dns_query_len, use_cuda) != 0) {
             logger(LOG_WARNING, "Received a suspicious query from the client");
             udp_request_kill(udp_request);
             return;
@@ -476,7 +478,7 @@ resolver_to_proxy_cb(evutil_socket_t proxy_resolver_handle, short ev_flags,
     if (udp_request->is_dnscrypted) {
         if (dnscrypt_server_curve
             (c, udp_request->cert, udp_request->client_nonce, udp_request->nmkey, dns_reply,
-             &dns_reply_len, max_len) != 0) {
+             &dns_reply_len, max_len, use_cuda) != 0) {
             logger(LOG_ERR, "Curving reply failed.");
             return;
         }
@@ -497,6 +499,8 @@ udp_listener_bind(struct context *c)
 {
     // listen socket & bind
     assert(c->udp_listener_handle == -1);
+
+	use_cuda = c->use_cuda;
 
     if ((c->udp_listener_handle =
          socket(c->local_sockaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP)) == -1) {

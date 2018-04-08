@@ -1,5 +1,7 @@
 #include "dnscrypt.h"
 
+bool use_cuda;
+
 static void
 tcp_request_kill(TCPRequest *const tcp_request)
 {
@@ -190,7 +192,7 @@ client_proxy_read_cb(struct bufferevent *const client_proxy_bev,
         if (dnscrypt_server_uncurve(c, tcp_request->cert,
                                     tcp_request->client_nonce,
                                     tcp_request->nmkey, dns_query,
-                                    &dns_query_len) != 0) {
+                                    &dns_query_len, use_cuda) != 0) {
             logger(LOG_WARNING, "Received a suspicious query from the client");
             tcp_request_kill(tcp_request);
             return;
@@ -310,7 +312,7 @@ resolver_proxy_read_cb(struct bufferevent *const proxy_resolver_bev,
     if (tcp_request->is_dnscrypted) {
         if (dnscrypt_server_curve(c, tcp_request->cert,
                                   tcp_request->client_nonce, tcp_request->nmkey,
-                                  dns_reply, &dns_reply_len, max_len) != 0) {
+                                  dns_reply, &dns_reply_len, max_len, use_cuda) != 0) {
             logger(LOG_ERR, "Curving reply failed.");
             return;
         }
@@ -468,6 +470,8 @@ tcp_listener_bind(struct context *c)
 #ifndef LEV_OPT_DEFERRED_ACCEPT
 # define LEV_OPT_DEFERRED_ACCEPT 0
 #endif
+
+	use_cuda = c->use_cuda;
 
     /* Until libevent gets support for SO_REUSEPORT we have to break
      * evconnlistener_new_bind() into a series of:

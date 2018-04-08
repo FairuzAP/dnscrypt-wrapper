@@ -53,6 +53,7 @@ int crypto_stream_salsa20_xor_ref(unsigned char *c, const unsigned char *m,
 int crypto_stream_xsalsa20_xor_ref(unsigned char *c, const unsigned char *m,
 								unsigned long long mlen, const unsigned char *n,
 								const unsigned char *k) {
+	printf("CPU XSalsa20\n");
 	unsigned char subkey[32];
     int           ret;
 
@@ -250,6 +251,7 @@ void crypto_stream_salsa20_xor_cuda(unsigned char *c, const unsigned char *m,
 int crypto_stream_xsalsa20_xor_cuda(unsigned char *c, const unsigned char *m,
 								unsigned long long mlen, const unsigned char *n,
 								const unsigned char *k)  {
+	printf("GPU XSalsa20\n");
 	unsigned char subkey[32];
     crypto_core_hsalsa20(subkey, n, k, NULL);
     
@@ -691,6 +693,8 @@ int aes_ctr_256_xor(const unsigned char *in, int in_len,
 					const unsigned char *key, 
 					unsigned char *out, 
 					const unsigned char *iv) {
+	printf("CPU AES\n");
+
 	unsigned char ctr_in[16];
 	unsigned char ctr_out[16];
 	unsigned int i;
@@ -890,13 +894,16 @@ void aes_ctr_256_xor_cuda(const unsigned char *in, unsigned long long in_len,
 	__shared__ u32 Te1[256];
 	__shared__ u32 Te2[256];
 	__shared__ u32 Te3[256];
+	__shared__ unsigned char key_char[244];
 	unsigned int i;
 	
 	Te0[threadIdx.x] = d_Te0[threadIdx.x];
 	Te1[threadIdx.x] = d_Te1[threadIdx.x];
 	Te2[threadIdx.x] = d_Te2[threadIdx.x];
 	Te3[threadIdx.x] = d_Te3[threadIdx.x];
-	
+	if(threadIdx.x < 244) {
+		key_char[threadIdx.x] = ((unsigned char *)enc_key)[threadIdx.x];
+	}
 	__syncthreads();
 	
 	unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
@@ -913,7 +920,7 @@ void aes_ctr_256_xor_cuda(const unsigned char *in, unsigned long long in_len,
         idx >>= 8;
     }
     idx = blockIdx.x*blockDim.x + threadIdx.x;
-	AES_encrypt_cuda(ctr_in, ctr_out, enc_key, Te0, Te1, Te2, Te3);
+	AES_encrypt_cuda(ctr_in, ctr_out, (const AES_KEY *)key_char, Te0, Te1, Te2, Te3);
 
 	idx = idx*16;
     for (i = 0; i < 16; i++) {
@@ -930,6 +937,7 @@ int aes_ctr_256_xor_cuda_handler(const unsigned char *in, unsigned long long in_
 								 const unsigned char *key, 
 								 unsigned char *out, 
 								 const unsigned char *iv) {
+	printf("GPU AES\n");
 	AES_KEY enc_key;
     AES_set_encrypt_key(key, 256, &enc_key);
     
@@ -992,4 +1000,3 @@ void init_cuda() {
 	cudaMemcpyToSymbol(d_Te2, h_Te2, sizeof h_Te2);
 	cudaMemcpyToSymbol(d_Te3, h_Te3, sizeof h_Te3);
 }
-

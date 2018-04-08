@@ -164,6 +164,7 @@ struct context {
     size_t keypairs_count;
     uint64_t nonce_ts_last;
     unsigned char hash_key[crypto_shorthash_KEYBYTES];
+    bool use_cuda;
 };
 
 const dnsccert * find_cert(const struct context *c,
@@ -228,12 +229,12 @@ struct dnscrypt_query_header {
 int dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
                             uint8_t client_nonce[crypto_box_HALF_NONCEBYTES],
                             uint8_t nmkey[crypto_box_BEFORENMBYTES],
-                            uint8_t *const buf, size_t * const lenp);
+                            uint8_t *const buf, size_t * const lenp, bool use_cuda);
 int dnscrypt_server_curve(struct context *c, const dnsccert *cert,
                           uint8_t client_nonce[crypto_box_HALF_NONCEBYTES],
                           uint8_t nmkey[crypto_box_BEFORENMBYTES],
                           uint8_t *const buf, size_t * const lenp,
-                          const size_t max_len);
+                          const size_t max_len, bool use_cuda);
 /**
  * Given a DNS request,iterate over the question sections.
  * If a TXT request for provider name is made, adds the certs as TXT records
