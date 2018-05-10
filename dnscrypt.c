@@ -1,4 +1,17 @@
 #include "dnscrypt.h"
+#include <time.h>
+
+struct timespec timer_start(){
+    struct timespec start_time;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_time);
+    return start_time;
+}
+long timer_end(struct timespec start_time){
+    struct timespec end_time;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_time);
+    long diffInNanos = (end_time.tv_sec - start_time.tv_sec) * (long)1e9 + (end_time.tv_nsec - start_time.tv_nsec);
+    return diffInNanos;
+}
 
 typedef struct Cached_ {
     uint8_t pk[crypto_box_PUBLICKEYBYTES];
@@ -251,6 +264,10 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
                         uint8_t nmkey[crypto_box_BEFORENMBYTES],
                         uint8_t *const buf, size_t * const lenp, bool use_cuda)
 {
+	struct timespec before;
+	long nsec;
+	before = timer_start();
+	
     size_t len = *lenp;
 
     if (len <= DNSCRYPT_QUERY_HEADER_SIZE) {
@@ -284,16 +301,17 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
     uint8_t nonce[crypto_box_NONCEBYTES];
     memcpy(nonce, query_header->nonce, crypto_box_HALF_NONCEBYTES);
     memset(nonce + crypto_box_HALF_NONCEBYTES, 0, crypto_box_HALF_NONCEBYTES);
+    
 	if (AES_CERT(cert)) { 
-		if(use_cuda) {
-			if (aespoly1305_open_afternm_cuda
-				(buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
-				 buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
-				 len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
-				 nonce, nmkey) != 0) {
-				return -1;
-			}	
-		} else {
+		//~ if(use_cuda) {
+			//~ if (aespoly1305_open_afternm_cuda
+				//~ (buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
+				 //~ buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
+				 //~ len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
+				 //~ nonce, nmkey) != 0) {
+				//~ return -1;
+			//~ }	
+		//~ } else {
 			if (aespoly1305_open_afternm_ref
 				(buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
 				 buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
@@ -301,26 +319,26 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
 				 nonce, nmkey) != 0) {
 				return -1;
 			}				
-		}
+		//~ }
 		
-	} else if (XCHACHA20_CERT(cert)) {
-#ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
-        if (crypto_box_curve25519xchacha20poly1305_open_easy_afternm
-            (buf, buf + DNSCRYPT_QUERY_BOX_OFFSET,
-             len - DNSCRYPT_QUERY_BOX_OFFSET, nonce, nmkey) != 0) {
-            return -1;
-        }
-#endif
-    } else {
-		if(use_cuda) {
-			if (crypto_box_open_afternm_cuda
-				(buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
-				 buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
-				 len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
-				 nonce, nmkey) != 0) {
-				return -1;
-			}				
-		} else {
+    //~ } else if (XCHACHA20_CERT(cert)) {
+//~ #ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
+        //~ if (crypto_box_curve25519xchacha20poly1305_open_easy_afternm
+            //~ (buf, buf + DNSCRYPT_QUERY_BOX_OFFSET,
+             //~ len - DNSCRYPT_QUERY_BOX_OFFSET, nonce, nmkey) != 0) {
+            //~ return -1;
+        //~ }
+//~ #endif
+    } else if (XSALSA20_CERT(cert)) {
+		//~ if(use_cuda) {
+			//~ if (crypto_box_open_afternm_cuda
+				//~ (buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
+				 //~ buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
+				 //~ len - DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, 
+				 //~ nonce, nmkey) != 0) {
+				//~ return -1;
+			//~ }				
+		//~ } else {
 			if (crypto_box_open_afternm_ref
 				(buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES, 
 				 buf + DNSCRYPT_QUERY_BOX_OFFSET - crypto_box_BOXZEROBYTES,
@@ -328,7 +346,7 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
 				 nonce, nmkey) != 0) {
 				return -1;
 			}	
-		}
+		//~ }
     }
 
     len -= DNSCRYPT_QUERY_HEADER_SIZE;
@@ -341,7 +359,10 @@ dnscrypt_server_uncurve(struct context *c, const dnsccert *cert,
     *lenp = len - (DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES);
     memmove(buf,
             buf + DNSCRYPT_QUERY_BOX_OFFSET + crypto_box_BOXZEROBYTES, *lenp);
-
+	
+	nsec = timer_end(before);
+    printf("Time: %ld nsec\n", nsec);
+    
     return 0;
 }
 
@@ -381,6 +402,10 @@ dnscrypt_server_curve(struct context *c, const dnsccert *cert,
                       uint8_t *const buf, size_t * const lenp,
                       const size_t max_len, bool use_cuda)
 {
+    struct timespec before;
+	long nsec;
+	before = timer_start();
+    
     uint8_t nonce[crypto_box_NONCEBYTES];
     uint8_t *boxed;
     size_t len = *lenp;
@@ -414,14 +439,14 @@ dnscrypt_server_curve(struct context *c, const dnsccert *cert,
 			}			
 		}
 		
-	} else if (XCHACHA20_CERT(cert)) {
-#ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
-        if (crypto_box_curve25519xchacha20poly1305_easy_afternm
-            (boxed, boxed + crypto_box_MACBYTES, len, nonce, nmkey) != 0) {
-            return -1;
-        }
-#endif
-    } else {
+	//~ } else if (XCHACHA20_CERT(cert)) {
+//~ #ifdef HAVE_CRYPTO_BOX_CURVE25519XCHACHA20POLY1305_OPEN_EASY
+        //~ if (crypto_box_curve25519xchacha20poly1305_easy_afternm
+            //~ (boxed, boxed + crypto_box_MACBYTES, len, nonce, nmkey) != 0) {
+            //~ return -1;
+        //~ }
+//~ #endif
+    } else if (XSALSA20_CERT(cert)) {
 		memset(boxed - crypto_box_BOXZEROBYTES, 0, crypto_box_ZEROBYTES);
 		if (use_cuda) {
 			if (crypto_box_afternm_cuda
@@ -441,6 +466,10 @@ dnscrypt_server_curve(struct context *c, const dnsccert *cert,
     memcpy(buf, DNSCRYPT_MAGIC_RESPONSE, DNSCRYPT_MAGIC_HEADER_LEN);
     memcpy(buf + DNSCRYPT_MAGIC_HEADER_LEN, nonce, crypto_box_NONCEBYTES);
     *lenp = len + DNSCRYPT_REPLY_HEADER_SIZE;
+    
+	nsec = timer_end(before);
+    printf("Time: %ld nsec\n", nsec);
+    
     return 0;
 }
 
